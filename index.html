@@ -3,14 +3,17 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-<title>Copa do Mundo - Acompanhamento Interativo</title>
+<title>Copa do Mundo 2026 - Acompanhamento</title>
 <link rel="stylesheet" href="styles.css" />
 </head>
 <body>
   <header class="topbar">
     <div class="logo">
       <span class="trophy">🏆</span>
-      <h1>Copa do Mundo</h1>
+      <div>
+        <h1>Copa do Mundo 2026</h1>
+        <span id="last-update" class="last-update">Aguardando primeira atualização...</span>
+      </div>
     </div>
     <nav class="tabs">
       <button class="tab-btn active" data-tab="grupos">Fase de Grupos</button>
@@ -20,25 +23,28 @@
   </header>
 
   <main>
-    <!-- FASE DE GRUPOS -->
     <section id="grupos" class="tab-panel active">
       <div class="actions">
-        <button id="btn-simular-grupos" class="primary">⚽ Simular Todos os Jogos da Fase de Grupos</button>
-        <button id="btn-reset" class="secondary">↺ Reiniciar Torneio</button>
+        <button id="btn-atualizar" class="primary">⟳ Atualizar Resultados (API)</button>
+        <button id="btn-simular-grupos" class="secondary">⚽ Simular Jogos Pendentes</button>
+        <button id="btn-reset" class="secondary">↺ Reiniciar</button>
       </div>
-      <div id="groups-container" class="groups-grid"></div>
+      <div id="groups-container" class="groups-grid">
+        <div class="empty-state">Clique em <strong>Atualizar Resultados</strong> para carregar os dados reais da Copa 2026.</div>
+      </div>
     </section>
 
-    <!-- MATA-MATA -->
     <section id="mata" class="tab-panel">
       <div class="actions">
-        <button id="btn-simular-fase" class="primary">▶ Simular Próxima Fase</button>
+        <button id="btn-atualizar-ko" class="primary">⟳ Atualizar Resultados (API)</button>
+        <button id="btn-simular-fase" class="secondary">▶ Simular Próxima Fase</button>
         <button id="btn-simular-tudo" class="secondary">⏩ Simular Até a Final</button>
       </div>
-      <div id="bracket" class="bracket"></div>
+      <div id="bracket" class="bracket">
+        <div class="empty-state">O chaveamento aparece após a fase de grupos.</div>
+      </div>
     </section>
 
-    <!-- CAMPEÃO -->
     <section id="campeao" class="tab-panel">
       <div id="champion-area" class="champion-area">
         <p class="empty-msg">O campeão será revelado quando a final for jogada.</p>
@@ -47,7 +53,6 @@
   </main>
 
   <div id="toast" class="toast"></div>
-
   <script src="app.js"></script>
 </body>
 </html>

@@ -59,6 +59,24 @@ body {
   background-clip: text;
 }
 
+.last-update {
+  display: block;
+  color: var(--muted);
+  font-size: 11px;
+  margin-top: 2px;
+}
+
+.empty-state {
+  background: var(--bg-card);
+  border: 1px dashed var(--border);
+  padding: 40px;
+  text-align: center;
+  border-radius: 12px;
+  color: var(--muted);
+  font-size: 14px;
+  grid-column: 1 / -1;
+}
+
 .tabs {
   display: flex;
   gap: 8px;
@@ -123,8 +141,8 @@ button:disabled { opacity: 0.5; cursor: not-allowed; transform: none !important;
 /* ============ GRUPOS ============ */
 .groups-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(340px, 1fr));
-  gap: 20px;
+  grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+  gap: 16px;
 }
 
 .group-card {
