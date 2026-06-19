@@ -1,19 +1,30 @@
-// ====== CONFIG API ======
-// TheSportsDB v1 free API (chave "3" pública). League 4429 = FIFA World Cup.
+// ====== CONFIG ======
 const API_BASE = "https://www.thesportsdb.com/api/v1/json/3";
-const LEAGUE_ID = 4429;
+const LEAGUE_ID = 4429; // FIFA World Cup
 const SEASON = "2026";
+const STORAGE_KEY = "fifa2026.userGroups";
 
-// ====== MAPEAMENTO DE BANDEIRAS / NOMES PT ======
-// Cobre as 48 seleções que podem estar na Copa 2026.
-// API costuma retornar nomes em inglês; mapeamos para PT + emoji.
+// Modelo padrão de grupos — EDITE PARA REFLETIR O SORTEIO REAL DA COPA 2026.
+// Cada linha: "Letra: Time1, Time2, Time3, Time4".
+const DEFAULT_GROUPS_TEXT = `A: México, Time A2, Time A3, Time A4
+B: Canadá, Time B2, Time B3, Time B4
+C: Time C1, Time C2, Time C3, Time C4
+D: EUA, Time D2, Time D3, Time D4
+E: Time E1, Time E2, Time E3, Time E4
+F: Time F1, Time F2, Time F3, Time F4
+G: Time G1, Time G2, Time G3, Time G4
+H: Time H1, Time H2, Time H3, Time H4
+I: Time I1, Time I2, Time I3, Time I4
+J: Time J1, Time J2, Time J3, Time J4
+K: Time K1, Time K2, Time K3, Time K4
+L: Time L1, Time L2, Time L3, Time L4`;
+
+// ====== TEAM INFO (PT + bandeira + força) ======
 const TEAM_INFO = {
-  // Anfitriões
   "USA": { pt: "EUA", flag: "🇺🇸", power: 78 },
   "United States": { pt: "EUA", flag: "🇺🇸", power: 78 },
   "Canada": { pt: "Canadá", flag: "🇨🇦", power: 74 },
   "Mexico": { pt: "México", flag: "🇲🇽", power: 78 },
-  // Conmebol
   "Brazil": { pt: "Brasil", flag: "🇧🇷", power: 92 },
   "Argentina": { pt: "Argentina", flag: "🇦🇷", power: 92 },
   "Uruguay": { pt: "Uruguai", flag: "🇺🇾", power: 83 },
@@ -24,7 +35,6 @@ const TEAM_INFO = {
   "Bolivia": { pt: "Bolívia", flag: "🇧🇴", power: 65 },
   "Chile": { pt: "Chile", flag: "🇨🇱", power: 73 },
   "Peru": { pt: "Peru", flag: "🇵🇪", power: 71 },
-  // UEFA
   "France": { pt: "França", flag: "🇫🇷", power: 91 },
   "Spain": { pt: "Espanha", flag: "🇪🇸", power: 89 },
   "England": { pt: "Inglaterra", flag: "🏴󠁧󠁢󠁥󠁮󠁧󠁿", power: 88 },
@@ -56,9 +66,6 @@ const TEAM_INFO = {
   "Albania": { pt: "Albânia", flag: "🇦🇱", power: 71 },
   "Slovakia": { pt: "Eslováquia", flag: "🇸🇰", power: 72 },
   "Slovenia": { pt: "Eslovênia", flag: "🇸🇮", power: 72 },
-  "Russia": { pt: "Rússia", flag: "🇷🇺", power: 76 },
-  "Finland": { pt: "Finlândia", flag: "🇫🇮", power: 70 },
-  // CAF
   "Morocco": { pt: "Marrocos", flag: "🇲🇦", power: 81 },
   "Senegal": { pt: "Senegal", flag: "🇸🇳", power: 77 },
   "Tunisia": { pt: "Tunísia", flag: "🇹🇳", power: 73 },
@@ -72,9 +79,7 @@ const TEAM_INFO = {
   "Ivory Coast": { pt: "Costa do Marfim", flag: "🇨🇮", power: 76 },
   "Mali": { pt: "Mali", flag: "🇲🇱", power: 71 },
   "South Africa": { pt: "África do Sul", flag: "🇿🇦", power: 72 },
-  "Burkina Faso": { pt: "Burquina Faso", flag: "🇧🇫", power: 70 },
   "DR Congo": { pt: "Rep. Dem. Congo", flag: "🇨🇩", power: 72 },
-  // AFC
   "Japan": { pt: "Japão", flag: "🇯🇵", power: 80 },
   "Korea Republic": { pt: "Coreia do Sul", flag: "🇰🇷", power: 78 },
   "South Korea": { pt: "Coreia do Sul", flag: "🇰🇷", power: 78 },
@@ -85,34 +90,106 @@ const TEAM_INFO = {
   "Uzbekistan": { pt: "Uzbequistão", flag: "🇺🇿", power: 70 },
   "Jordan": { pt: "Jordânia", flag: "🇯🇴", power: 69 },
   "Iraq": { pt: "Iraque", flag: "🇮🇶", power: 68 },
-  "United Arab Emirates": { pt: "Emirados Árabes", flag: "🇦🇪", power: 67 },
-  // CONCACAF
   "Costa Rica": { pt: "Costa Rica", flag: "🇨🇷", power: 71 },
   "Panama": { pt: "Panamá", flag: "🇵🇦", power: 71 },
   "Jamaica": { pt: "Jamaica", flag: "🇯🇲", power: 70 },
   "Honduras": { pt: "Honduras", flag: "🇭🇳", power: 67 },
-  // OFC
   "New Zealand": { pt: "Nova Zelândia", flag: "🇳🇿", power: 68 },
 };
 
+// Constrói índice reverso: PT (sem acento, minúsculo) → canonical English
+const NAME_INDEX = (() => {
+  const idx = {};
+  const norm = s => s.toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g,"").trim();
+  for (const eng in TEAM_INFO) {
+    idx[norm(eng)] = eng;
+    idx[norm(TEAM_INFO[eng].pt)] = eng;
+  }
+  return idx;
+})();
+
+function canonical(name) {
+  if (!name) return name;
+  const norm = name.toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g,"").trim();
+  return NAME_INDEX[norm] || name;
+}
 function getInfo(name) {
-  return TEAM_INFO[name] || { pt: name, flag: "🏳️", power: 70 };
+  const k = canonical(name);
+  return TEAM_INFO[k] || { pt: name, flag: "🏳️", power: 70 };
 }
 
 // ====== ESTADO ======
 let state = {
-  groups: {},       // { "A": { teams: [...], matches: [...] } }
-  knockout: { r32: [], r16: [], qf: [], sf: [], final: [], third: [] },
+  groups: {},     // { "A": { teams:[...], matches:[...] } }
+  knockout: { r32:[], r16:[], qf:[], sf:[], final:[], third:[] },
   champion: null,
+  lastApiEvents: [],
   lastUpdate: null,
-  loading: false,
-  source: null,     // "api" | "sim"
 };
 
-// ====== FETCH API ======
+// ====== USER CONFIG (localStorage) ======
+function loadUserGroups() {
+  const raw = localStorage.getItem(STORAGE_KEY);
+  if (raw) {
+    try { return JSON.parse(raw); } catch {}
+  }
+  return null;
+}
+function saveUserGroups(obj) {
+  localStorage.setItem(STORAGE_KEY, JSON.stringify(obj));
+}
+function parseGroupsText(text) {
+  const out = {};
+  for (const line of text.split(/\r?\n/)) {
+    const m = line.match(/^\s*([A-L])\s*[:\-]\s*(.+)$/i);
+    if (!m) continue;
+    const letter = m[1].toUpperCase();
+    const teams = m[2].split(/[,;|]/).map(s => s.trim()).filter(Boolean);
+    if (teams.length === 4) out[letter] = teams.map(canonical);
+  }
+  return out;
+}
+function groupsToText(userGroups) {
+  if (!userGroups) return "";
+  return Object.keys(userGroups).sort().map(letter => {
+    const teams = userGroups[letter].map(t => getInfo(t).pt);
+    return `${letter}: ${teams.join(", ")}`;
+  }).join("\n");
+}
+
+// gera os 6 jogos do round-robin
+function genMatches(teams) {
+  const [a, b, c, d] = teams;
+  return [
+    { home:a, away:b }, { home:c, away:d },
+    { home:a, away:c }, { home:b, away:d },
+    { home:a, away:d }, { home:b, away:c },
+  ].map(m => ({ ...m, hScore:null, aScore:null, played:false, winner:null }));
+}
+
+function buildGroupsFromUserConfig() {
+  const ug = loadUserGroups();
+  if (!ug) { state.groups = {}; return; }
+  const groups = {};
+  for (const letter in ug) {
+    const teamNames = ug[letter];
+    const teams = teamNames.map(name => ({
+      name, info:getInfo(name),
+      P:0, J:0, V:0, E:0, D:0, GP:0, GC:0, SG:0,
+    }));
+    groups[letter] = { teams, matches: genMatches(teamNames) };
+  }
+  state.groups = groups;
+}
+
+// ====== API ======
+function num(v){ const n=Number(v); return Number.isFinite(n)?n:null; }
+function isPlayed(ev) {
+  return ev.intHomeScore != null && ev.intHomeScore !== "" &&
+         ev.intAwayScore != null && ev.intAwayScore !== "";
+}
 async function fetchRealData() {
-  state.loading = true;
-  setLastUpdate("Buscando dados na API...");
+  setLastUpdate("Buscando placares na API...");
   toggleButtons(true);
   try {
     const url = `${API_BASE}/eventsseason.php?id=${LEAGUE_ID}&s=${SEASON}`;
@@ -120,124 +197,75 @@ async function fetchRealData() {
     if (!res.ok) throw new Error("HTTP " + res.status);
     const data = await res.json();
     const events = Array.isArray(data.events) ? data.events : [];
-    if (events.length === 0) {
-      toast("A API ainda não tem jogos publicados para a Copa 2026. Tente novamente mais tarde.");
-      setLastUpdate("Sem dados na API");
-      return;
-    }
-    parseEvents(events);
-    state.source = "api";
+    state.lastApiEvents = events;
+    const filled = fillScoresFromEvents(events);
     state.lastUpdate = new Date();
-    const played = events.filter(e => isPlayed(e)).length;
-    setLastUpdate(`✓ Atualizado ${state.lastUpdate.toLocaleString("pt-BR")} — ${played}/${events.length} jogos com resultado`);
-    toast(`Atualizado! ${played} jogos disputados.`);
+    if (events.length === 0) {
+      toast("API ainda sem jogos para a Copa 2026.");
+      setLastUpdate("API sem dados ainda — tente mais tarde.");
+    } else {
+      toast(`API retornou ${events.length} jogos. ${filled} aplicados aos grupos.`);
+      setLastUpdate(`✓ Atualizado ${state.lastUpdate.toLocaleString("pt-BR")} — ${filled}/${events.length} jogos vinculados aos grupos`);
+    }
   } catch (err) {
     console.error(err);
-    toast("Erro ao buscar dados: " + err.message);
+    toast("Erro na API: " + err.message);
     setLastUpdate("Falha na atualização — " + err.message);
   } finally {
-    state.loading = false;
     toggleButtons(false);
     renderAll();
   }
 }
 
-function isPlayed(ev) {
-  const h = ev.intHomeScore;
-  const a = ev.intAwayScore;
-  return h != null && h !== "" && a != null && a !== "";
-}
-
-function num(v) { const n = Number(v); return Number.isFinite(n) ? n : null; }
-
-function parseEvents(events) {
-  const groups = {};
-  const ko = { r32: [], r16: [], qf: [], sf: [], final: [], third: [] };
-
+function fillScoresFromEvents(events) {
+  let count = 0;
   for (const ev of events) {
-    const groupStr = (ev.strGroup || "").trim();
-    const roundStr = (ev.strRound || "").toString();
-    const round = inferRound(ev);
-
-    const baseMatch = {
-      home: ev.strHomeTeam,
-      away: ev.strAwayTeam,
-      hScore: isPlayed(ev) ? num(ev.intHomeScore) : null,
-      aScore: isPlayed(ev) ? num(ev.intAwayScore) : null,
-      date: ev.dateEvent || ev.strTimestamp || "",
-      played: isPlayed(ev),
-      winner: null,
-    };
-    if (baseMatch.played) {
-      baseMatch.winner = baseMatch.hScore > baseMatch.aScore ? baseMatch.home
-                       : baseMatch.hScore < baseMatch.aScore ? baseMatch.away
-                       : null;
+    if (!isPlayed(ev)) continue;
+    const home = canonical(ev.strHomeTeam);
+    const away = canonical(ev.strAwayTeam);
+    const hScore = num(ev.intHomeScore), aScore = num(ev.intAwayScore);
+    let matched = false;
+    for (const letter in state.groups) {
+      const g = state.groups[letter];
+      for (const m of g.matches) {
+        const mh = canonical(m.home), ma = canonical(m.away);
+        if (mh === home && ma === away) {
+          m.hScore = hScore; m.aScore = aScore; m.played = true;
+          m.winner = hScore > aScore ? m.home : (hScore < aScore ? m.away : null);
+          matched = true;
+        } else if (mh === away && ma === home) {
+          m.hScore = aScore; m.aScore = hScore; m.played = true;
+          m.winner = m.hScore > m.aScore ? m.home : (m.hScore < m.aScore ? m.away : null);
+          matched = true;
+        }
+      }
     }
-
-    if (/group/i.test(groupStr) || (round === "group")) {
-      const letter = (groupStr.match(/group\s*([A-L])/i)?.[1] || "?").toUpperCase();
-      if (letter === "?") continue;
-      groups[letter] ??= { teamSet: new Set(), matches: [] };
-      groups[letter].teamSet.add(ev.strHomeTeam);
-      groups[letter].teamSet.add(ev.strAwayTeam);
-      groups[letter].matches.push(baseMatch);
-    } else if (round && ko[round]) {
-      ko[round].push(baseMatch);
-    }
+    if (matched) count++;
   }
-
-  // calcula classificação de cada grupo
-  for (const letter in groups) {
-    const g = groups[letter];
-    const teams = [...g.teamSet].map(name => ({
-      name, info: getInfo(name),
-      P:0, J:0, V:0, E:0, D:0, GP:0, GC:0, SG:0,
-    }));
-    const byName = Object.fromEntries(teams.map(t => [t.name, t]));
-    for (const m of g.matches) {
-      if (!m.played) continue;
-      const h = byName[m.home], a = byName[m.away];
-      if (!h || !a) continue;
-      h.J++; a.J++;
-      h.GP += m.hScore; h.GC += m.aScore;
-      a.GP += m.aScore; a.GC += m.hScore;
-      h.SG = h.GP - h.GC; a.SG = a.GP - a.GC;
-      if (m.hScore > m.aScore) { h.V++; h.P += 3; a.D++; }
-      else if (m.hScore < m.aScore) { a.V++; a.P += 3; h.D++; }
-      else { h.E++; a.E++; h.P++; a.P++; }
-    }
-    teams.sort((x,y) => y.P-x.P || y.SG-x.SG || y.GP-x.GP || x.name.localeCompare(y.name));
-    g.teams = teams;
-    g.matches.sort((a,b) => (a.date||"").localeCompare(b.date||""));
-    delete g.teamSet;
-  }
-
-  state.groups = groups;
-  state.knockout = ko;
-  state.champion = ko.final[0]?.winner ? ko.final[0].winner : null;
+  for (const letter in state.groups) recalcStandings(letter);
+  return count;
 }
 
-function inferRound(ev) {
-  const r = (ev.strRound || "").toString().toLowerCase();
-  const n = parseInt(ev.intRound, 10);
-  if (r.includes("final") && !r.includes("semi") && !r.includes("quarter") && !r.includes("3rd")) return "final";
-  if (r.includes("3rd") || r.includes("third place") || r.includes("3º")) return "third";
-  if (r.includes("semi")) return "sf";
-  if (r.includes("quarter")) return "qf";
-  if (r.includes("round of 16") || r.includes("16th")) return "r16";
-  if (r.includes("round of 32") || r.includes("32nd")) return "r32";
-  if (r === "1" || r === "2" || r === "3" || (n >= 1 && n <= 3)) return "group";
-  // códigos numéricos típicos do TheSportsDB
-  if (n === 125) return "r32";
-  if (n === 128 || n === 150) return "r16";
-  if (n === 200) return "qf";
-  if (n === 500) return "sf";
-  if (n === 1000) return "final";
-  if (n === 160) return "third";
-  return null;
+function recalcStandings(letter) {
+  const g = state.groups[letter];
+  for (const t of g.teams) { t.P=t.J=t.V=t.E=t.D=t.GP=t.GC=t.SG=0; }
+  const byName = Object.fromEntries(g.teams.map(t => [canonical(t.name), t]));
+  for (const m of g.matches) {
+    if (!m.played) continue;
+    const h = byName[canonical(m.home)], a = byName[canonical(m.away)];
+    if (!h || !a) continue;
+    h.J++; a.J++;
+    h.GP += m.hScore; h.GC += m.aScore;
+    a.GP += m.aScore; a.GC += m.hScore;
+    h.SG = h.GP - h.GC; a.SG = a.GP - a.GC;
+    if (m.hScore > m.aScore) { h.V++; h.P += 3; a.D++; }
+    else if (m.hScore < m.aScore) { a.V++; a.P += 3; h.D++; }
+    else { h.E++; a.E++; h.P++; a.P++; }
+  }
+  g.teams.sort((x,y) => y.P-x.P || y.SG-x.SG || y.GP-x.GP || x.name.localeCompare(y.name));
 }
 
-// ====== SIMULAÇÃO (para jogos sem resultado real) ======
+// ====== SIMULAÇÃO ======
 function simScore(pA, pB) {
   const diff = pA - pB;
   const a = Math.max(0, Math.round(1.3 + diff*0.04 + Math.random()*1.2 + (Math.random()-0.5)));
@@ -256,7 +284,7 @@ function simulateMatch(homeName, awayName, allowDraw=true) {
 
 async function simulatePendingGroups() {
   if (Object.keys(state.groups).length === 0) {
-    toast("Carregue os jogos primeiro com Atualizar Resultados.");
+    toast("Configure os grupos antes de simular.");
     return;
   }
   toggleButtons(true);
@@ -269,7 +297,6 @@ async function simulatePendingGroups() {
       const [h, a] = simulateMatch(m.home, m.away, true);
       m.hScore = h; m.aScore = a; m.played = true;
       m.winner = h>a ? m.home : (h<a ? m.away : null);
-      // atualiza UI parcial
       const cell = document.querySelector(`[data-match="${letter}-${i}"] .score`);
       if (cell) {
         cell.textContent = `${h} × ${a}`;
@@ -277,108 +304,66 @@ async function simulatePendingGroups() {
         cell.classList.add("flash");
         setTimeout(() => cell.classList.remove("flash"), 600);
       }
-      await sleep(120);
+      await sleep(80);
     }
     recalcStandings(letter);
   }
-  state.source = state.source === "api" ? "api+sim" : "sim";
   toggleButtons(false);
   renderAll();
-  toast("Jogos pendentes simulados.");
+  toast("Pendentes simulados!");
 }
 
-function recalcStandings(letter) {
-  const g = state.groups[letter];
-  for (const t of g.teams) { t.P=t.J=t.V=t.E=t.D=t.GP=t.GC=t.SG=0; }
-  const byName = Object.fromEntries(g.teams.map(t => [t.name, t]));
-  for (const m of g.matches) {
-    if (!m.played) continue;
-    const h = byName[m.home], a = byName[m.away];
-    if (!h || !a) continue;
-    h.J++; a.J++;
-    h.GP += m.hScore; h.GC += m.aScore;
-    a.GP += m.aScore; a.GC += m.hScore;
-    h.SG = h.GP - h.GC; a.SG = a.GP - a.GC;
-    if (m.hScore > m.aScore) { h.V++; h.P += 3; a.D++; }
-    else if (m.hScore < m.aScore) { a.V++; a.P += 3; h.D++; }
-    else { h.E++; a.E++; h.P++; a.P++; }
-  }
-  g.teams.sort((x,y) => y.P-x.P || y.SG-x.SG || y.GP-x.GP || x.name.localeCompare(y.name));
-}
-
-// ====== MATA-MATA: construção a partir dos grupos (modo 2026 simplificado) ======
+// ====== MATA-MATA ======
 function buildKnockoutFromGroups() {
   const letters = Object.keys(state.groups).sort();
   if (letters.length < 12) {
-    toast(`São esperados 12 grupos, encontrados ${letters.length}. Não dá pra montar o mata-mata.`);
+    toast(`Esperados 12 grupos, encontrados ${letters.length}. Verifique a config.`);
     return false;
   }
-  // pega top 2 de cada grupo + 8 melhores 3º colocados → 32 times
-  const first = [], second = [], thirds = [];
+  const first=[], second=[], thirds=[];
   for (const l of letters) {
     const g = state.groups[l];
     if (!g.teams[0] || !g.teams[1]) return false;
-    first.push({ ...g.teams[0], group: l, rank: 1 });
-    second.push({ ...g.teams[1], group: l, rank: 2 });
-    if (g.teams[2]) thirds.push({ ...g.teams[2], group: l, rank: 3 });
+    first.push({ ...g.teams[0], group:l, rank:1 });
+    second.push({ ...g.teams[1], group:l, rank:2 });
+    if (g.teams[2]) thirds.push({ ...g.teams[2], group:l, rank:3 });
   }
   thirds.sort((a,b) => b.P-a.P || b.SG-a.SG || b.GP-a.GP);
-  const bestThirds = thirds.slice(0, 8);
-
-  // chaveamento simples 1ºs vs 3ºs/2ºs alternados
-  const slots = [];
-  for (let i = 0; i < 12; i++) slots.push(first[i]);
-  for (let i = 0; i < 12; i++) slots.push(second[i]);
-  for (let i = 0; i < 8; i++) slots.push(bestThirds[i]);
-  // emparelha 1 vs último, 2 vs penúltimo, etc.
+  const slots = [...first, ...second, ...thirds.slice(0,8)];
   const matches = [];
   for (let i = 0; i < 16; i++) {
-    const home = slots[i];
-    const away = slots[31 - i];
     matches.push({
-      home: home.name, away: away.name,
-      hScore: null, aScore: null, played: false, winner: null,
+      home: slots[i].name, away: slots[31-i].name,
+      hScore:null, aScore:null, played:false, winner:null,
     });
   }
-  state.knockout.r32 = matches;
-  state.knockout.r16 = [];
-  state.knockout.qf = [];
-  state.knockout.sf = [];
-  state.knockout.final = [];
-  state.knockout.third = [];
+  state.knockout = { r32: matches, r16:[], qf:[], sf:[], final:[], third:[] };
   return true;
 }
 
 async function simulateNextKnockoutRound() {
   const ko = state.knockout;
-  // se não tem r32, monta a partir dos grupos
   if (!ko.r32.length) {
-    const ok = buildKnockoutFromGroups();
-    if (!ok) return;
+    if (!buildKnockoutFromGroups()) return;
   }
-  // descobre próxima fase pendente
   const order = ["r32","r16","qf","sf","final"];
   const labels = { r32:"Round of 32", r16:"Oitavas", qf:"Quartas", sf:"Semifinais", final:"Final" };
   let currentKey = null;
   for (const key of order) {
-    const round = ko[key];
-    if (!round.length || round.some(m => !m.played)) { currentKey = key; break; }
+    const r = ko[key];
+    if (!r.length || r.some(m => !m.played)) { currentKey = key; break; }
   }
   if (!currentKey) { toast("Torneio finalizado!"); return; }
-
-  // se a fase atual está vazia, monta a partir da anterior
   if (!ko[currentKey].length) {
-    const prevKey = order[order.indexOf(currentKey) - 1];
+    const prevKey = order[order.indexOf(currentKey)-1];
     const winners = ko[prevKey].map(m => m.winner).filter(Boolean);
-    const pairs = [];
+    ko[currentKey] = [];
     for (let i = 0; i < winners.length; i += 2) {
-      pairs.push({ home: winners[i], away: winners[i+1], hScore: null, aScore: null, played: false, winner: null });
+      ko[currentKey].push({ home: winners[i], away: winners[i+1], hScore:null, aScore:null, played:false, winner:null });
     }
-    ko[currentKey] = pairs;
     renderBracket();
     await sleep(300);
   }
-
   toggleButtons(true);
   toast(`Simulando ${labels[currentKey]}...`);
   const round = ko[currentKey];
@@ -387,10 +372,9 @@ async function simulateNextKnockoutRound() {
     if (m.played) continue;
     const card = document.querySelector(`[data-ko="${currentKey}"][data-idx="${i}"]`);
     if (card) card.classList.add("playing");
-    await sleep(550);
+    await sleep(500);
     const [h, a] = simulateMatch(m.home, m.away, false);
-    m.hScore = h; m.aScore = a; m.played = true;
-    m.winner = h > a ? m.home : m.away;
+    m.hScore=h; m.aScore=a; m.played=true; m.winner = h>a?m.home:m.away;
     renderBracket();
     const c2 = document.querySelector(`[data-ko="${currentKey}"][data-idx="${i}"]`);
     if (c2) {
@@ -398,10 +382,8 @@ async function simulateNextKnockoutRound() {
       const w = c2.querySelector(".bracket-team.winner");
       if (w) { w.classList.add("advance-anim"); setTimeout(()=>w.classList.remove("advance-anim"), 1200); }
     }
-    await sleep(300);
+    await sleep(250);
   }
-
-  // 3º lugar após semis
   if (currentKey === "sf" && ko.sf.every(m=>m.played) && !ko.third.length) {
     const losers = ko.sf.map(m => m.winner === m.home ? m.away : m.home);
     ko.third = [{ home: losers[0], away: losers[1], hScore:null, aScore:null, played:false, winner:null }];
@@ -415,7 +397,6 @@ async function simulateNextKnockoutRound() {
     state.champion = ko.final[0].winner;
     renderChampion();
   }
-
   toggleButtons(false);
   renderAll();
 }
@@ -434,6 +415,7 @@ function renderAll() {
   renderGroups();
   renderBracket();
   renderChampion();
+  renderApiEvents();
 }
 
 function teamLine(name) {
@@ -445,17 +427,20 @@ function renderGroups() {
   const container = document.getElementById("groups-container");
   const letters = Object.keys(state.groups).sort();
   if (letters.length === 0) {
-    container.innerHTML = `<div class="empty-state">Clique em <strong>Atualizar Resultados</strong> para carregar os dados reais da Copa 2026.</div>`;
+    container.innerHTML = `<div class="empty-state">
+      Nenhum grupo configurado.<br>
+      Clique em <strong>⚙️ Configurar Grupos</strong> acima para definir os 12 grupos da Copa 2026.
+    </div>`;
     return;
   }
   container.innerHTML = "";
   for (const letter of letters) {
     const g = state.groups[letter];
-    const playedCount = g.matches.filter(m=>m.played).length;
+    const played = g.matches.filter(m=>m.played).length;
     const card = document.createElement("div");
     card.className = "group-card";
     card.innerHTML = `
-      <div class="group-title"><span>Grupo ${letter}</span><span style="font-size:12px;color:var(--muted)">${playedCount}/${g.matches.length} jogos</span></div>
+      <div class="group-title"><span>Grupo ${letter}</span><span style="font-size:12px;color:var(--muted)">${played}/${g.matches.length} jogos</span></div>
       <table class="standings">
         <thead><tr><th>Time</th><th>P</th><th>J</th><th>V</th><th>E</th><th>D</th><th>SG</th></tr></thead>
         <tbody>
@@ -481,11 +466,30 @@ function renderGroups() {
   }
 }
 
+function renderApiEvents() {
+  const el = document.getElementById("api-events");
+  const evs = state.lastApiEvents;
+  if (!evs.length) { el.innerHTML = ""; return; }
+  const finished = evs.filter(isPlayed).sort((a,b) => (b.dateEvent||"").localeCompare(a.dateEvent||""));
+  const upcoming = evs.filter(e => !isPlayed(e)).sort((a,b) => (a.dateEvent||"").localeCompare(b.dateEvent||""));
+  const rows = (list, finishedFlag) => list.slice(0, 12).map(ev => `
+    <div class="api-row">
+      <span class="api-date">${ev.dateEvent || "?"}</span>
+      <span class="api-teams">${teamLine(ev.strHomeTeam)} <strong>${finishedFlag ? `${ev.intHomeScore}×${ev.intAwayScore}` : "vs"}</strong> ${teamLine(ev.strAwayTeam)}</span>
+    </div>`).join("");
+  el.innerHTML = `
+    <h3 class="section-title">Dados brutos da API <small>(${evs.length} jogos retornados)</small></h3>
+    ${finished.length ? `<div class="api-block"><h4>✅ Resultados</h4>${rows(finished, true)}</div>` : ""}
+    ${upcoming.length ? `<div class="api-block"><h4>📅 Próximos</h4>${rows(upcoming, false)}</div>` : ""}
+    <p class="api-note">Estes jogos vêm direto do TheSportsDB. Se um placar não aparecer no seu grupo é porque o nome do time não bateu — ajuste em Configurar Grupos.</p>
+  `;
+}
+
 function renderBracket() {
   const el = document.getElementById("bracket");
   const ko = state.knockout;
   if (!ko.r32.length && !ko.r16.length && !ko.qf.length) {
-    el.innerHTML = `<div class="empty-state">O chaveamento aparece após carregar a fase de grupos.<br>Use <strong>Atualizar Resultados</strong> ou <strong>Simular Próxima Fase</strong>.</div>`;
+    el.innerHTML = `<div class="empty-state">O chaveamento aparece quando você simular o mata-mata.<br>Use o botão <strong>Simular Próxima Fase</strong>.</div>`;
     return;
   }
   const drawMatch = (m, key, idx) => {
@@ -567,7 +571,6 @@ function setLastUpdate(txt) { document.getElementById("last-update").textContent
 function toggleButtons(disabled) {
   document.querySelectorAll("button").forEach(b => { b.disabled = disabled; });
 }
-
 function setupTabs() {
   document.querySelectorAll(".tab-btn").forEach(btn => {
     btn.addEventListener("click", () => {
@@ -579,22 +582,63 @@ function setupTabs() {
   });
 }
 
+function openConfig() {
+  const panel = document.getElementById("config-panel");
+  const ta = document.getElementById("config-textarea");
+  const ug = loadUserGroups();
+  ta.value = ug ? groupsToText(ug) : DEFAULT_GROUPS_TEXT;
+  panel.open = true;
+  panel.scrollIntoView({ behavior: "smooth", block: "start" });
+}
+
+function saveConfig() {
+  const ta = document.getElementById("config-textarea");
+  const parsed = parseGroupsText(ta.value);
+  const letters = Object.keys(parsed);
+  if (letters.length === 0) {
+    toast("Não consegui ler nenhum grupo. Verifique o formato.");
+    return;
+  }
+  saveUserGroups(parsed);
+  buildGroupsFromUserConfig();
+  if (state.lastApiEvents.length) fillScoresFromEvents(state.lastApiEvents);
+  renderAll();
+  toast(`${letters.length} grupos salvos!`);
+  document.getElementById("config-panel").open = false;
+}
+
 function boot() {
   setupTabs();
+  buildGroupsFromUserConfig();
+
   document.getElementById("btn-atualizar").addEventListener("click", fetchRealData);
   document.getElementById("btn-atualizar-ko").addEventListener("click", fetchRealData);
   document.getElementById("btn-simular-grupos").addEventListener("click", simulatePendingGroups);
   document.getElementById("btn-simular-fase").addEventListener("click", simulateNextKnockoutRound);
   document.getElementById("btn-simular-tudo").addEventListener("click", simulateAllKnockout);
+  document.getElementById("btn-config").addEventListener("click", openConfig);
+  document.getElementById("btn-save-config").addEventListener("click", saveConfig);
+  document.getElementById("btn-load-default").addEventListener("click", () => {
+    document.getElementById("config-textarea").value = DEFAULT_GROUPS_TEXT;
+  });
   document.getElementById("btn-reset").addEventListener("click", () => {
-    state = { groups:{}, knockout:{r32:[],r16:[],qf:[],sf:[],final:[],third:[]}, champion:null, lastUpdate:null, loading:false, source:null };
-    setLastUpdate("Aguardando primeira atualização...");
+    if (!confirm("Apagar tudo (grupos configurados e placares)?")) return;
+    localStorage.removeItem(STORAGE_KEY);
+    state = { groups:{}, knockout:{r32:[],r16:[],qf:[],sf:[],final:[],third:[]}, champion:null, lastApiEvents:[], lastUpdate:null };
+    setLastUpdate("App reiniciado.");
     renderAll();
-    toast("App reiniciado.");
+    toast("Tudo limpo.");
   });
 
-  // tenta carregar automaticamente ao abrir
-  fetchRealData();
+  // se já tem grupos salvos, busca placares automaticamente
+  if (loadUserGroups()) {
+    fetchRealData();
+  } else {
+    // primeira vez: abre o painel de config
+    setLastUpdate("Configure os grupos abaixo para começar.");
+    setTimeout(openConfig, 300);
+    renderAll();
+  }
 }
 
 document.addEventListener("DOMContentLoaded", boot);

@@ -12,7 +12,7 @@
       <span class="trophy">🏆</span>
       <div>
         <h1>Copa do Mundo 2026</h1>
-        <span id="last-update" class="last-update">Aguardando primeira atualização...</span>
+        <span id="last-update" class="last-update">Pronto para usar</span>
       </div>
     </div>
     <nav class="tabs">
@@ -25,24 +25,38 @@
   <main>
     <section id="grupos" class="tab-panel active">
       <div class="actions">
-        <button id="btn-atualizar" class="primary">⟳ Atualizar Resultados (API)</button>
-        <button id="btn-simular-grupos" class="secondary">⚽ Simular Jogos Pendentes</button>
+        <button id="btn-atualizar" class="primary">⟳ Atualizar Placares (API)</button>
+        <button id="btn-config" class="secondary">⚙️ Configurar Grupos</button>
+        <button id="btn-simular-grupos" class="secondary">⚽ Simular Pendentes</button>
         <button id="btn-reset" class="secondary">↺ Reiniciar</button>
       </div>
-      <div id="groups-container" class="groups-grid">
-        <div class="empty-state">Clique em <strong>Atualizar Resultados</strong> para carregar os dados reais da Copa 2026.</div>
-      </div>
+
+      <details id="config-panel" class="config-panel">
+        <summary>⚙️ Configurar grupos manualmente</summary>
+        <p class="config-help">
+          Edite a lista abaixo com os 12 grupos da Copa 2026. Use o formato
+          <code>Letra: Time1, Time2, Time3, Time4</code> (um grupo por linha).
+          Os nomes podem ser em português ou inglês — o app reconhece os dois.
+        </p>
+        <textarea id="config-textarea" rows="14"></textarea>
+        <div class="config-buttons">
+          <button id="btn-save-config" class="primary">💾 Salvar Grupos</button>
+          <button id="btn-load-default" class="secondary">Carregar modelo padrão</button>
+        </div>
+      </details>
+
+      <div id="groups-container" class="groups-grid"></div>
+
+      <div id="api-events" class="api-events"></div>
     </section>
 
     <section id="mata" class="tab-panel">
       <div class="actions">
-        <button id="btn-atualizar-ko" class="primary">⟳ Atualizar Resultados (API)</button>
+        <button id="btn-atualizar-ko" class="primary">⟳ Atualizar Placares (API)</button>
         <button id="btn-simular-fase" class="secondary">▶ Simular Próxima Fase</button>
         <button id="btn-simular-tudo" class="secondary">⏩ Simular Até a Final</button>
       </div>
-      <div id="bracket" class="bracket">
-        <div class="empty-state">O chaveamento aparece após a fase de grupos.</div>
-      </div>
+      <div id="bracket" class="bracket"></div>
     </section>
 
     <section id="campeao" class="tab-panel">

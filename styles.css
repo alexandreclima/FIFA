@@ -75,6 +75,97 @@ body {
   color: var(--muted);
   font-size: 14px;
   grid-column: 1 / -1;
+  line-height: 1.6;
+}
+
+.config-panel {
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 16px;
+  margin-bottom: 20px;
+}
+.config-panel[open] { box-shadow: 0 4px 16px rgba(0,0,0,0.4); }
+.config-panel summary {
+  cursor: pointer;
+  font-weight: 700;
+  font-size: 15px;
+  color: var(--accent);
+  padding: 4px 0;
+  user-select: none;
+}
+.config-help {
+  margin: 12px 0;
+  font-size: 13px;
+  color: var(--muted);
+  line-height: 1.5;
+}
+.config-help code {
+  background: var(--bg);
+  padding: 2px 6px;
+  border-radius: 4px;
+  color: var(--text);
+  font-size: 12px;
+}
+#config-textarea {
+  width: 100%;
+  background: var(--bg);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 10px 12px;
+  font-family: ui-monospace, "SF Mono", Menlo, monospace;
+  font-size: 13px;
+  resize: vertical;
+  min-height: 280px;
+}
+.config-buttons {
+  display: flex;
+  gap: 10px;
+  margin-top: 12px;
+  flex-wrap: wrap;
+}
+
+.api-events {
+  margin-top: 32px;
+}
+.section-title {
+  color: var(--accent);
+  font-size: 16px;
+  margin-bottom: 12px;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+}
+.section-title small { color: var(--muted); font-size: 12px; text-transform: none; letter-spacing: 0; margin-left: 8px; }
+.api-block {
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 12px;
+  margin-bottom: 12px;
+}
+.api-block h4 {
+  font-size: 13px;
+  color: var(--muted);
+  margin-bottom: 8px;
+}
+.api-row {
+  display: grid;
+  grid-template-columns: 90px 1fr;
+  gap: 12px;
+  padding: 6px 0;
+  border-bottom: 1px solid rgba(45,74,107,0.4);
+  font-size: 13px;
+  align-items: center;
+}
+.api-row:last-child { border-bottom: none; }
+.api-date { color: var(--muted); font-size: 11px; }
+.api-teams strong { color: var(--accent); margin: 0 8px; }
+.api-note {
+  font-size: 12px;
+  color: var(--muted);
+  margin-top: 8px;
+  font-style: italic;
 }
 
 .tabs {
