@@ -1,0 +1,53 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Copa do Mundo - Acompanhamento Interativo</title>
+<link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <header class="topbar">
+    <div class="logo">
+      <span class="trophy">🏆</span>
+      <h1>Copa do Mundo</h1>
+    </div>
+    <nav class="tabs">
+      <button class="tab-btn active" data-tab="grupos">Fase de Grupos</button>
+      <button class="tab-btn" data-tab="mata">Mata-Mata</button>
+      <button class="tab-btn" data-tab="campeao">Campeão</button>
+    </nav>
+  </header>
+
+  <main>
+    <!-- FASE DE GRUPOS -->
+    <section id="grupos" class="tab-panel active">
+      <div class="actions">
+        <button id="btn-simular-grupos" class="primary">⚽ Simular Todos os Jogos da Fase de Grupos</button>
+        <button id="btn-reset" class="secondary">↺ Reiniciar Torneio</button>
+      </div>
+      <div id="groups-container" class="groups-grid"></div>
+    </section>
+
+    <!-- MATA-MATA -->
+    <section id="mata" class="tab-panel">
+      <div class="actions">
+        <button id="btn-simular-fase" class="primary">▶ Simular Próxima Fase</button>
+        <button id="btn-simular-tudo" class="secondary">⏩ Simular Até a Final</button>
+      </div>
+      <div id="bracket" class="bracket"></div>
+    </section>
+
+    <!-- CAMPEÃO -->
+    <section id="campeao" class="tab-panel">
+      <div id="champion-area" class="champion-area">
+        <p class="empty-msg">O campeão será revelado quando a final for jogada.</p>
+      </div>
+    </section>
+  </main>
+
+  <div id="toast" class="toast"></div>
+
+  <script src="app.js"></script>
+</body>
+</html>
