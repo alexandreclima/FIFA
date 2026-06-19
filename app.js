@@ -1,7 +1,8 @@
 // ====== CONFIG ======
-const API_BASE = "https://www.thesportsdb.com/api/v1/json/3";
-const LEAGUE_ID = 4429; // FIFA World Cup
-const SEASON = "2026";
+// ESPN hidden API (sem chave, CORS habilitado). Slug fifa.world = Copa do Mundo.
+const ESPN_BASE = "https://site.api.espn.com/apis/site/v2/sports/soccer/fifa.world";
+const WC_START = "20260611"; // 11 jun 2026
+const WC_END   = "20260719"; // 19 jul 2026
 const STORAGE_KEY = "fifa2026.userGroups";
 
 // Modelo padrão de grupos — EDITE PARA REFLETIR O SORTEIO REAL DA COPA 2026.
@@ -182,34 +183,47 @@ function buildGroupsFromUserConfig() {
   state.groups = groups;
 }
 
-// ====== API ======
+// ====== API (ESPN) ======
 function num(v){ const n=Number(v); return Number.isFinite(n)?n:null; }
-function isPlayed(ev) {
-  return ev.intHomeScore != null && ev.intHomeScore !== "" &&
-         ev.intAwayScore != null && ev.intAwayScore !== "";
-}
+
 async function fetchRealData() {
-  setLastUpdate("Buscando placares na API...");
+  setLastUpdate("Buscando dados na ESPN...");
   toggleButtons(true);
   try {
-    const url = `${API_BASE}/eventsseason.php?id=${LEAGUE_ID}&s=${SEASON}`;
+    const url = `${ESPN_BASE}/scoreboard?dates=${WC_START}-${WC_END}&limit=200`;
     const res = await fetch(url);
     if (!res.ok) throw new Error("HTTP " + res.status);
     const data = await res.json();
     const events = Array.isArray(data.events) ? data.events : [];
     state.lastApiEvents = events;
-    const filled = fillScoresFromEvents(events);
-    state.lastUpdate = new Date();
+
     if (events.length === 0) {
-      toast("API ainda sem jogos para a Copa 2026.");
+      toast("ESPN ainda sem jogos da Copa 2026 nesse intervalo.");
       setLastUpdate("API sem dados ainda — tente mais tarde.");
     } else {
-      toast(`API retornou ${events.length} jogos. ${filled} aplicados aos grupos.`);
-      setLastUpdate(`✓ Atualizado ${state.lastUpdate.toLocaleString("pt-BR")} — ${filled}/${events.length} jogos vinculados aos grupos`);
+      const parsed = parseEspnEvents(events);
+      const espnGroupCount = Object.keys(parsed.groups).length;
+
+      if (espnGroupCount > 0) {
+        // ESPN identificou os grupos — usa como fonte da verdade
+        state.groups = parsed.groups;
+        state.knockout = parsed.knockout;
+        state.champion = parsed.knockout.final[0]?.winner || null;
+      } else if (loadUserGroups()) {
+        // ESPN retornou jogos mas sem agrupamento — usa config manual e preenche placares
+        buildGroupsFromUserConfig();
+        fillScoresFromEspn(events);
+      }
+
+      state.lastUpdate = new Date();
+      const groupCount = Object.keys(state.groups).length;
+      const played = events.filter(e => isEspnPlayed(e)).length;
+      toast(`ESPN: ${events.length} jogos, ${played} disputados, ${groupCount} grupos.`);
+      setLastUpdate(`✓ ${state.lastUpdate.toLocaleString("pt-BR")} — ${played}/${events.length} jogos disputados`);
     }
   } catch (err) {
     console.error(err);
-    toast("Erro na API: " + err.message);
+    toast("Erro na ESPN: " + err.message);
     setLastUpdate("Falha na atualização — " + err.message);
   } finally {
     toggleButtons(false);
@@ -217,13 +231,91 @@ async function fetchRealData() {
   }
 }
 
-function fillScoresFromEvents(events) {
+function isEspnPlayed(ev) {
+  return ev.competitions?.[0]?.status?.type?.completed === true;
+}
+
+function parseEspnEvents(events) {
+  const groups = {};
+  const ko = { r32:[], r16:[], qf:[], sf:[], final:[], third:[] };
+
+  for (const ev of events) {
+    const comp = ev.competitions?.[0];
+    if (!comp || !comp.competitors || comp.competitors.length < 2) continue;
+    const homeC = comp.competitors.find(c => c.homeAway === "home") || comp.competitors[0];
+    const awayC = comp.competitors.find(c => c.homeAway === "away") || comp.competitors[1];
+
+    const home = homeC.team?.displayName || homeC.team?.name || "?";
+    const away = awayC.team?.displayName || awayC.team?.name || "?";
+    const hScore = num(homeC.score);
+    const aScore = num(awayC.score);
+    const played = comp.status?.type?.completed === true;
+
+    const match = {
+      home, away,
+      hScore: played ? hScore : null,
+      aScore: played ? aScore : null,
+      played,
+      date: ev.date,
+      winner: played ? (hScore > aScore ? home : aScore > hScore ? away : null) : null,
+    };
+
+    // detectar rodada/grupo via "notes", "name" ou "season.slug"
+    const headline = (comp.notes?.[0]?.headline || comp.notes?.[0]?.text || "").toLowerCase();
+    const eventName = (ev.name || "").toLowerCase();
+    const round = inferEspnRound(headline + " " + eventName);
+
+    if (round?.type === "group") {
+      const letter = round.letter;
+      groups[letter] ??= { teamSet: new Set(), matches: [] };
+      groups[letter].teamSet.add(home);
+      groups[letter].teamSet.add(away);
+      groups[letter].matches.push(match);
+    } else if (round?.type && ko[round.type]) {
+      ko[round.type].push(match);
+    } else {
+      // fallback: assume grupo "?" ou ignora
+    }
+  }
+
+  // monta teams + standings por grupo
+  for (const letter in groups) {
+    const g = groups[letter];
+    const teams = [...g.teamSet].map(name => ({
+      name, info: getInfo(name),
+      P:0, J:0, V:0, E:0, D:0, GP:0, GC:0, SG:0,
+    }));
+    g.teams = teams;
+    delete g.teamSet;
+  }
+  for (const letter in groups) {
+    state.groups = groups;
+    recalcStandings(letter);
+  }
+  state.groups = groups;
+
+  // ordena partidas por data
+  for (const letter in groups) {
+    groups[letter].matches.sort((a,b) => (a.date||"").localeCompare(b.date||""));
+  }
+  for (const k of Object.keys(ko)) {
+    ko[k].sort((a,b) => (a.date||"").localeCompare(b.date||""));
+  }
+  return { groups, knockout: ko };
+}
+
+function fillScoresFromEspn(events) {
   let count = 0;
   for (const ev of events) {
-    if (!isPlayed(ev)) continue;
-    const home = canonical(ev.strHomeTeam);
-    const away = canonical(ev.strAwayTeam);
-    const hScore = num(ev.intHomeScore), aScore = num(ev.intAwayScore);
+    if (!isEspnPlayed(ev)) continue;
+    const c = ev.competitions?.[0];
+    const homeC = c?.competitors?.find(x=>x.homeAway==="home") || c?.competitors?.[0];
+    const awayC = c?.competitors?.find(x=>x.homeAway==="away") || c?.competitors?.[1];
+    if (!homeC || !awayC) continue;
+    const home = canonical(homeC.team.displayName);
+    const away = canonical(awayC.team.displayName);
+    const hScore = num(homeC.score);
+    const aScore = num(awayC.score);
     let matched = false;
     for (const letter in state.groups) {
       const g = state.groups[letter];
@@ -244,6 +336,19 @@ function fillScoresFromEvents(events) {
   }
   for (const letter in state.groups) recalcStandings(letter);
   return count;
+}
+
+function inferEspnRound(text) {
+  const t = text.toLowerCase();
+  const gm = t.match(/group\s*([a-l])\b/);
+  if (gm) return { type: "group", letter: gm[1].toUpperCase() };
+  if (t.includes("third place") || t.includes("3rd place") || t.includes("third-place")) return { type: "third" };
+  if (t.includes("final") && !t.includes("semi") && !t.includes("quarter")) return { type: "final" };
+  if (t.includes("semifinal") || t.includes("semi-final")) return { type: "sf" };
+  if (t.includes("quarterfinal") || t.includes("quarter-final")) return { type: "qf" };
+  if (t.includes("round of 16")) return { type: "r16" };
+  if (t.includes("round of 32")) return { type: "r32" };
+  return null;
 }
 
 function recalcStandings(letter) {
@@ -470,18 +575,28 @@ function renderApiEvents() {
   const el = document.getElementById("api-events");
   const evs = state.lastApiEvents;
   if (!evs.length) { el.innerHTML = ""; return; }
-  const finished = evs.filter(isPlayed).sort((a,b) => (b.dateEvent||"").localeCompare(a.dateEvent||""));
-  const upcoming = evs.filter(e => !isPlayed(e)).sort((a,b) => (a.dateEvent||"").localeCompare(b.dateEvent||""));
-  const rows = (list, finishedFlag) => list.slice(0, 12).map(ev => `
-    <div class="api-row">
-      <span class="api-date">${ev.dateEvent || "?"}</span>
-      <span class="api-teams">${teamLine(ev.strHomeTeam)} <strong>${finishedFlag ? `${ev.intHomeScore}×${ev.intAwayScore}` : "vs"}</strong> ${teamLine(ev.strAwayTeam)}</span>
-    </div>`).join("");
+  const fmtDate = d => {
+    if (!d) return "?";
+    try { return new Date(d).toLocaleDateString("pt-BR", { day:"2-digit", month:"2-digit" }); }
+    catch { return d.substring(0,10); }
+  };
+  const espnRow = ev => {
+    const c = ev.competitions?.[0];
+    const home = c?.competitors?.find(x=>x.homeAway==="home") || c?.competitors?.[0];
+    const away = c?.competitors?.find(x=>x.homeAway==="away") || c?.competitors?.[1];
+    if (!home || !away) return "";
+    const played = c?.status?.type?.completed;
+    return `<div class="api-row">
+      <span class="api-date">${fmtDate(ev.date)}</span>
+      <span class="api-teams">${teamLine(home.team.displayName)} <strong>${played ? `${home.score}×${away.score}` : "vs"}</strong> ${teamLine(away.team.displayName)}</span>
+    </div>`;
+  };
+  const finished = evs.filter(isEspnPlayed).sort((a,b) => (b.date||"").localeCompare(a.date||""));
+  const upcoming = evs.filter(e => !isEspnPlayed(e)).sort((a,b) => (a.date||"").localeCompare(b.date||""));
   el.innerHTML = `
-    <h3 class="section-title">Dados brutos da API <small>(${evs.length} jogos retornados)</small></h3>
-    ${finished.length ? `<div class="api-block"><h4>✅ Resultados</h4>${rows(finished, true)}</div>` : ""}
-    ${upcoming.length ? `<div class="api-block"><h4>📅 Próximos</h4>${rows(upcoming, false)}</div>` : ""}
-    <p class="api-note">Estes jogos vêm direto do TheSportsDB. Se um placar não aparecer no seu grupo é porque o nome do time não bateu — ajuste em Configurar Grupos.</p>
+    <h3 class="section-title">Últimos resultados da ESPN <small>(${evs.length} jogos no intervalo)</small></h3>
+    ${finished.length ? `<div class="api-block"><h4>✅ Disputados</h4>${finished.slice(0,15).map(espnRow).join("")}</div>` : ""}
+    ${upcoming.length ? `<div class="api-block"><h4>📅 Próximos</h4>${upcoming.slice(0,15).map(espnRow).join("")}</div>` : ""}
   `;
 }
 
@@ -601,10 +716,11 @@ function saveConfig() {
   }
   saveUserGroups(parsed);
   buildGroupsFromUserConfig();
-  if (state.lastApiEvents.length) fillScoresFromEvents(state.lastApiEvents);
   renderAll();
   toast(`${letters.length} grupos salvos!`);
   document.getElementById("config-panel").open = false;
+  // depois de salvar, busca placares
+  fetchRealData();
 }
 
 function boot() {
@@ -630,15 +746,8 @@ function boot() {
     toast("Tudo limpo.");
   });
 
-  // se já tem grupos salvos, busca placares automaticamente
-  if (loadUserGroups()) {
-    fetchRealData();
-  } else {
-    // primeira vez: abre o painel de config
-    setLastUpdate("Configure os grupos abaixo para começar.");
-    setTimeout(openConfig, 300);
-    renderAll();
-  }
+  // sempre tenta buscar da ESPN primeiro — ela é fonte da verdade
+  fetchRealData();
 }
 
 document.addEventListener("DOMContentLoaded", boot);
