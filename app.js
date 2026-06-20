@@ -189,46 +189,134 @@ function num(v){ const n=Number(v); return Number.isFinite(n)?n:null; }
 async function fetchRealData() {
   setLastUpdate("Buscando dados na ESPN...");
   toggleButtons(true);
+  state.lastApiEvents = [];
+
+  let standingsGroups = {};
+  let events = [];
+  const diag = [];
+
+  // 1) STANDINGS — devolve grupos+seleções+tabela direto
   try {
-    const url = `${ESPN_BASE}/scoreboard?dates=${WC_START}-${WC_END}&limit=200`;
-    const res = await fetch(url);
-    if (!res.ok) throw new Error("HTTP " + res.status);
-    const data = await res.json();
-    const events = Array.isArray(data.events) ? data.events : [];
-    state.lastApiEvents = events;
+    const sUrl = `${ESPN_BASE}/standings?season=2026`;
+    const sRes = await fetch(sUrl);
+    if (sRes.ok) {
+      const sData = await sRes.json();
+      standingsGroups = parseEspnStandings(sData);
+      diag.push(`standings: ${Object.keys(standingsGroups).length} grupos`);
+    } else diag.push(`standings: HTTP ${sRes.status}`);
+  } catch (e) { diag.push("standings: " + e.message); }
 
-    if (events.length === 0) {
-      toast("ESPN ainda sem jogos da Copa 2026 nesse intervalo.");
-      setLastUpdate("API sem dados ainda — tente mais tarde.");
-    } else {
-      const parsed = parseEspnEvents(events);
-      const espnGroupCount = Object.keys(parsed.groups).length;
+  // 2) SCOREBOARD — devolve jogos com datas/placares
+  try {
+    const eUrl = `${ESPN_BASE}/scoreboard?dates=${WC_START}-${WC_END}&limit=200`;
+    const eRes = await fetch(eUrl);
+    if (eRes.ok) {
+      const eData = await eRes.json();
+      events = Array.isArray(eData.events) ? eData.events : [];
+      // FILTRO ESTRITO: somente jogos de 2026
+      events = events.filter(ev => {
+        const y = ev.date ? new Date(ev.date).getFullYear() : null;
+        return y === 2026;
+      });
+      state.lastApiEvents = events;
+      diag.push(`scoreboard: ${events.length} jogos de 2026`);
+    } else diag.push(`scoreboard: HTTP ${eRes.status}`);
+  } catch (e) { diag.push("scoreboard: " + e.message); }
 
-      if (espnGroupCount > 0) {
-        // ESPN identificou os grupos — usa como fonte da verdade
-        state.groups = parsed.groups;
-        state.knockout = parsed.knockout;
-        state.champion = parsed.knockout.final[0]?.winner || null;
-      } else if (loadUserGroups()) {
-        // ESPN retornou jogos mas sem agrupamento — usa config manual e preenche placares
-        buildGroupsFromUserConfig();
-        fillScoresFromEspn(events);
+  // monta state combinando as duas fontes
+  if (Object.keys(standingsGroups).length > 0) {
+    state.groups = standingsGroups;
+    // adiciona partidas do scoreboard nos grupos correspondentes
+    const fromScoreboard = parseEspnEvents(events);
+    for (const letter in fromScoreboard.groups) {
+      if (state.groups[letter]) {
+        state.groups[letter].matches = fromScoreboard.groups[letter].matches;
       }
-
-      state.lastUpdate = new Date();
-      const groupCount = Object.keys(state.groups).length;
-      const played = events.filter(e => isEspnPlayed(e)).length;
-      toast(`ESPN: ${events.length} jogos, ${played} disputados, ${groupCount} grupos.`);
-      setLastUpdate(`✓ ${state.lastUpdate.toLocaleString("pt-BR")} — ${played}/${events.length} jogos disputados`);
     }
-  } catch (err) {
-    console.error(err);
-    toast("Erro na ESPN: " + err.message);
-    setLastUpdate("Falha na atualização — " + err.message);
-  } finally {
-    toggleButtons(false);
-    renderAll();
+    state.knockout = fromScoreboard.knockout;
+    state.champion = fromScoreboard.knockout.final[0]?.winner || null;
+    for (const letter in state.groups) {
+      if (state.groups[letter].matches?.length) recalcStandings(letter);
+    }
+  } else if (events.length > 0) {
+    // sem standings, monta tudo do scoreboard
+    const parsed = parseEspnEvents(events);
+    if (Object.keys(parsed.groups).length > 0) {
+      state.groups = parsed.groups;
+      state.knockout = parsed.knockout;
+      state.champion = parsed.knockout.final[0]?.winner || null;
+    } else if (loadUserGroups()) {
+      buildGroupsFromUserConfig();
+      fillScoresFromEspn(events);
+    }
+  } else if (loadUserGroups()) {
+    buildGroupsFromUserConfig();
   }
+
+  const groupCount = Object.keys(state.groups).length;
+  const totalTeams = Object.values(state.groups).reduce((s,g)=>s+(g.teams?.length||0), 0);
+  state.lastUpdate = new Date();
+
+  if (groupCount === 0) {
+    setLastUpdate(`⚠️ ESPN sem dados de 2026 ainda. ${diag.join(" | ")}`);
+    toast("ESPN ainda não publicou os dados da Copa 2026.");
+  } else {
+    setLastUpdate(`✓ ${state.lastUpdate.toLocaleString("pt-BR")} — ${groupCount} grupos, ${totalTeams} seleções, ${events.filter(isEspnPlayed).length} jogos disputados`);
+    toast(`Atualizado: ${groupCount} grupos, ${totalTeams} seleções.`);
+  }
+
+  toggleButtons(false);
+  renderAll();
+}
+
+function parseEspnStandings(data) {
+  const groups = {};
+  // ESPN standings: data.children = lista de grupos
+  const children = Array.isArray(data?.children) ? data.children
+                 : Array.isArray(data?.standings?.entries) ? [{ name:"Group", standings: data.standings }]
+                 : [];
+  for (const child of children) {
+    const name = (child.name || child.abbreviation || "").toString();
+    const letterMatch = name.match(/group\s*([a-l])/i) || name.match(/^([a-l])$/i);
+    if (!letterMatch) continue;
+    const letter = letterMatch[1].toUpperCase();
+    const entries = child.standings?.entries || child.entries || [];
+    if (entries.length === 0) continue;
+
+    const teams = entries.map(entry => {
+      const team = entry.team || {};
+      const name = team.displayName || team.name || team.shortDisplayName || "?";
+      const stats = {};
+      for (const s of (entry.stats || [])) {
+        stats[s.name || s.shortDisplayName || s.abbreviation] = s.value;
+      }
+      return {
+        name, info: getInfo(name),
+        P:  num(stats.points) ?? 0,
+        J:  num(stats.gamesPlayed) ?? 0,
+        V:  num(stats.wins) ?? 0,
+        E:  num(stats.ties) ?? 0,
+        D:  num(stats.losses) ?? 0,
+        GP: num(stats.pointsFor) ?? num(stats.goalsFor) ?? 0,
+        GC: num(stats.pointsAgainst) ?? num(stats.goalsAgainst) ?? 0,
+        SG: 0,
+      };
+    }).filter(t => isValidTeamName(t.name));
+
+    if (teams.length === 0) continue;
+    for (const t of teams) t.SG = t.GP - t.GC;
+    teams.sort((x,y) => y.P-x.P || y.SG-x.SG || y.GP-x.GP || x.name.localeCompare(y.name));
+    groups[letter] = { teams, matches: [] };
+  }
+  return groups;
+}
+
+function isValidTeamName(name) {
+  if (!name) return false;
+  const l = name.toString().toLowerCase().trim();
+  if (l === "?" || l === "") return false;
+  return !l.includes("tbd") && !l.includes("to be") && !l.includes("vencedor") &&
+         !l.includes("winner") && !l.includes("runner") && !l.includes("placeholder");
 }
 
 function isEspnPlayed(ev) {
@@ -245,8 +333,9 @@ function parseEspnEvents(events) {
     const homeC = comp.competitors.find(c => c.homeAway === "home") || comp.competitors[0];
     const awayC = comp.competitors.find(c => c.homeAway === "away") || comp.competitors[1];
 
-    const home = homeC.team?.displayName || homeC.team?.name || "?";
-    const away = awayC.team?.displayName || awayC.team?.name || "?";
+    const home = homeC.team?.displayName || homeC.team?.shortDisplayName || homeC.team?.name || "?";
+    const away = awayC.team?.displayName || awayC.team?.shortDisplayName || awayC.team?.name || "?";
+    if (!isValidTeamName(home) || !isValidTeamName(away)) continue;
     const hScore = num(homeC.score);
     const aScore = num(awayC.score);
     const played = comp.status?.type?.completed === true;
